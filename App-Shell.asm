@@ -2,7 +2,7 @@
 ;@                                                                            @
 ;@                        S y m b O S   -   S h e l l                         @
 ;@                                                                            @
-;@             (c) 2005-2024 by Prodatron / SymbiosiS (Jörn Mika)             @
+;@             (c) 2005-2025 by Prodatron / SymbiosiS (Jörn Mika)             @
 ;@                                                                            @
 ;@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
@@ -11,17 +11,24 @@ relocate_start
 shvs_maj    equ "2"
 shvs_min    equ "4"
 
-if computer_mode=4
+    if PLATFORM_TYPE=PLATFORM_SVM
 max_xlen    equ 120
 max_ylen    equ 50
+elseif PLATFORM_TYPE=PLATFORM_ISA
+max_xlen    equ 80
+max_ylen    equ 44
 else
 max_xlen    equ 80
 max_ylen    equ 25
 endif
 
 
-;- svm -> kein cursor und space/clr im window mode (alt font issue?)
+;- use syslib
+;- chars >127
+;  - NXT + ISA
+;  - EP (gen from nxt/isa)
 
+;- svm -> kein cursor und space/clr im window mode (alt font issue?)
 
 ;- next -> center in fullscreen mode
 ;- cmd quit -> ask tasks to quit, if they don't quit within a few cycles, kill them
@@ -32,7 +39,6 @@ endif
 ;  - does some shit, when textoutput on/off is activated
 
 ;- app hangs after loosing focus AND continuing printing
-;- chars >127 EP
 
 ;- "focus" process-kill key-combination
 ;- kein tab complete bei strinp
@@ -161,7 +167,11 @@ endif
 ;>>> FILF2T -> Wandelt Filesystem-Timestamp in Uhrzeit um
 ;>>> DSKSRV -> Desktop Service nutzen
 
-read"..\..\..\SVN-Main\trunk\_svm\hardware.cpc"
+    if PLATFORM_TYPE=PLATFORM_SVM
+read"..\..\..\SRC-Main\_svm\hardware.cpc"
+elseif PLATFORM_TYPE=PLATFORM_ISA
+read"..\..\..\SRC-Main\_isa\io_ports.asm"
+endif
 
 macro   nextreg number,value
     if "value"="a"
@@ -228,7 +238,7 @@ prgdatadr   dw #1000                ;Original-Origin                    POST Adr
 prgtrnadr   dw relocate_count       ;Anzahl Einträge Relocator-Tabelle  POST Adresse Transfer-Teil
 prgprztab   dw prgstk-prgtrnbeg     ;Länge Stack                        POST Tabelle Prozesse
             dw 0                    ;*reserved*
-prgbnknum   db 0                    ;*reserved*                         POST bank number
+App_BnkNum  db 0                    ;*reserved*                         POST bank number
             db "SymShell":ds 16:db 0 ;Name
             db 1                    ;flags (+1=16c icon)
             dw prgicn16c-prgcodbeg  ;16 colour icon offset
@@ -245,6 +255,9 @@ prgicnbig   db 6,24,24,#F0,#F0,#F0,#F0,#F0,#F0,#D7,#FF,#FF,#FF,#FF,#B4,#87,#FA,#
             db #F0,#D2,#B4,#F0,#F0,#F0,#F0,#D2,#B4,#F0,#F0,#F0,#F0,#D2,#B4,#F0,#F0,#F0,#F0,#D2,#B4,#F0,#F0,#F0,#F0,#D2,#87,#0F,#0F,#0F,#0F,#1E,#F0,#F0,#F0,#F0,#F0,#F0
 
 
+testxt1 db "BlitterTextTest",0
+testxt2 db "ABCDEFG",0
+
 ;### PRGPRZ -> Programm-Prozess
 windatprz   equ 3   ;Prozeßnummer
 windatsup   equ 51  ;Nummer des Superfensters+1 oder 0
@@ -260,9 +273,10 @@ prgprz  ld a,(prgprzn)
         call prgpar
         push af
         call cfglod
-if computer_mode=1
-elseif computer_mode=2
-elseif computer_mode=4
+    if PLATFORM_TYPE=PLATFORM_MSX
+elseif PLATFORM_TYPE=PLATFORM_PCW
+elseif PLATFORM_TYPE=PLATFORM_SVM
+elseif PLATFORM_TYPE=PLATFORM_ISA
 else
         call fulrel             ;fullscreen mode relocation for CPC,EP,NC,NXT
 endif
@@ -275,10 +289,11 @@ endif
         call SySystem_HLPINI
 
         ld c,MSC_DSK_WINOPN
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         ld b,a
         ld de,prgwindat
         call msgsnd             ;Fenster aufbauen
+
 prgprz1 call msgdsk             ;Message holen -> IXL=Status, IXH=Absender-Prozeß
         cp MSR_DSK_WOPNER
         jp z,prgend4            ;kein Speicher für Fenster -> Prozeß beenden
@@ -423,7 +438,7 @@ prginf  ld hl,prgmsginf         ;*** Info-Fenster
         call prginf0
         jp prgprz0
 prginf0 ld (prgmsgb+1),hl
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         ld c,a
         ld (prgmsgb+3),bc
         ld a,MSC_SYS_SYSWRN
@@ -594,7 +609,7 @@ cnsmsg7 dec b                   ;** MSC_SHL_PTHADD
         ld e,d
         ld d,a
         push de             ;de=base path, hl=add path
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         add a:add a:add a:add a
         add (iy+7)
         ld de,shlpthnew2    ;add path in shlpthnew2
@@ -634,7 +649,7 @@ cnsmsg8 ld hl,shlpthnew2
         ld (prgmsgb+5),a
         ld a,(prgmsgb+7)
         add a:add a:add a:add a
-        ld hl,prgbnknum
+        ld hl,App_BnkNum
         add (hl)
         ld hl,shlpthnew
         ld bc,256
@@ -722,7 +737,7 @@ cnskey3 push af             ;Zeile absenden
         jr z,cnskey4        ;Abschluß durch Abbruch, nur Code senden
         ld a,(ix+cnscmdbnk)
         add a:add a:add a:add a
-        ld hl,prgbnknum
+        ld hl,App_BnkNum
         add (hl)
         ld hl,shlinplin
         ld bc,256
@@ -910,7 +925,7 @@ cnsinc0 ld e,0
         jr z,cnsincx
         dec d                   ;*** Input aus Datei
         ld a,d
-        ld de,(prgbnknum)
+        ld de,(App_BnkNum)
         ld bc,1
         ld hl,cnsoucb
         call syscll             ;Zeichen aus Datei lesen
@@ -977,7 +992,7 @@ cnsouc2 call cnsdat
         dec a
         ld hl,cnsoucb
         ld (hl),e
-        ld de,(prgbnknum)
+        ld de,(App_BnkNum)
         ld bc,1
         jr cnsoul7
 
@@ -1003,7 +1018,7 @@ cnsoul4 push bc
         ld d,e
         inc d
         jr nz,cnsoul7
-        ld de,(prgbnknum)
+        ld de,(App_BnkNum)
 cnsoul7 call syscll             ;Zeile in Datei schreiben
         db MSC_SYS_SYSFIL
         db FNC_FIL_FILOUT
@@ -1017,7 +1032,7 @@ cnsoul7 call syscll             ;Zeile in Datei schreiben
 cnsoul1 inc e
         ret z
         dec e
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         add a:add a:add a:add a
         add e
         ld de,cnsbuf
@@ -1064,7 +1079,7 @@ cnshnd  ld a,(cnsprzanz)
         ccf
         jp nc,cnshnd2           ;Bildschirm
         ex de,hl
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         dec c
         jr nz,cnshnd1
@@ -1101,7 +1116,7 @@ cnshnd6 ld a,c
         jr c,cnshnd8
         ld a,b
         ld hl,cnsbuf
-        ld de,(prgbnknum)
+        ld de,(App_BnkNum)
         ld bc,(cnshndl)
         push af
         call syscll
@@ -1146,7 +1161,7 @@ cnshnd3 pop hl
         sub 1
         ccf
         jr nc,cnshnd4           ;Tastatur
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         call syscll             ;vorhandene Datei
         db MSC_SYS_SYSFIL
@@ -1259,7 +1274,7 @@ cnsdel3 ld a,(hl)
         ld (hl),a
         ld a,c
         ld bc,1
-        ld de,(prgbnknum)
+        ld de,(App_BnkNum)
         call syscll         ;EOF in Datei schreiben
         db MSC_SYS_SYSFIL
         db FNC_FIL_FILOUT
@@ -1272,7 +1287,7 @@ cnsdel3 ld a,(hl)
 ;==============================================================================
 
 diaopn  ld c,MSC_DSK_WINOPN     ;Fenster aufbauen
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         ld b,a
         call msgsnd
 diaopn1 call msgdsk             ;Message holen -> IXL=Status, IXH=Absender-Prozeß
@@ -1595,7 +1610,7 @@ cmdprzb call dirfil             ;shlpthnew=voller Applications Pfad
         ld (de),a
         call dirfil
         ld hl,shlpthnew
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         call syscll
         db MSC_SYS_SYSFIL
@@ -2073,14 +2088,14 @@ cmdtyp4 call mulsrc             ;type schleife
 cmdtyp0 ld a,(scryln)
         dec a
         ld (dirlincnt),a
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         call syscll
         db MSC_SYS_SYSFIL
         db FNC_FIL_FILOPN
         jp c,cmderr
 cmdtyp1 ld hl,shlpthnew2
-        ld de,(prgbnknum)
+        ld de,(App_BnkNum)
         push af
         call syscll
         db MSC_SYS_SYSFIL
@@ -2136,7 +2151,7 @@ cmdmkd1 ld a,l
         call cmdchk
         ret c
         ld de,(cmdpartab+3)
-cmdmkd3 ld a,(prgbnknum)
+cmdmkd3 ld a,(App_BnkNum)
         db #dd:ld h,a
         call syscll
 cmdmkd2 dw 0
@@ -2180,7 +2195,7 @@ cmdatr  call mulpre
         jp c,cmderr
 cmdatr1 call mulsrc             ;attrib schleife
         ret c
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         xor a
         push hl
@@ -2256,7 +2271,7 @@ cmdren1 call mulsrc             ;ren schleife
         call muldst
         pop hl
         ld de,(mulprends)
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         call syscll
         db MSC_SYS_SYSFIL
@@ -2288,7 +2303,7 @@ cmdmov1 call mulsrc             ;move schleife
         call mulplt
         pop hl
         ld de,shlpthnew2
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         call syscll
         db MSC_SYS_SYSFIL
@@ -2341,7 +2356,7 @@ cmdcop4 ld (0*5+prgmemtab+0),a
         or a
         jr nz,cmdcop1
         call muldst             ;** sonderfall -> mehrere files in ein zielfile kopieren
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         xor a
         call syscll
@@ -2360,7 +2375,7 @@ cmdcopd call mulsrc
         call cmdcopc
         pop hl
         jr c,cmdcope        ;error -> ziel schließen, abbruch
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         call syscll
         db MSC_SYS_SYSFIL
@@ -2444,7 +2459,7 @@ cmdcop0 push de
         pop de
         ret c
         push de
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         call syscll
         db MSC_SYS_SYSFIL
@@ -2452,7 +2467,7 @@ cmdcop0 push de
         pop hl
         ret c               ;error -> abbruch
         ld (cmdcophsr),a    ;quell-handler merken
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         xor a
         call syscll
@@ -2520,7 +2535,13 @@ dirlincnt   db 0
 dirmsgint   db " Directory of ",0
 dirmsgemp   db "File not found",13,10,0
 dirlensum   ds 4
-dirtxtlin   db "##.##.#### ##:##            filename.ext":ds 3
+dirtxtlin   db "##.##.#### ##:##            "
+if PLATFORM_TYPE=PLATFORM_SVM
+    ds 255:ds 3
+else
+    db "filename.ext":ds 3
+endif
+
 dirtxtdir   db "  <DIR>     "
 dirtxtfil   db "            "
 dirtxtlen   ds 12
@@ -2580,7 +2601,7 @@ cmddir3 ld hl,dirmsgint         ;Kopf ausgeben
         or  #88
         db #dd:ld l,a
         ld hl,shlpthnew
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         ld de,dirbufmem
         ld bc,dirbufmax
@@ -2858,7 +2879,7 @@ cmdhlpc ld hl,cmdhlppth     ;* man file öffnen
         dec a
         ld (dirlincnt),a
         ld hl,(prgparp)
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         call syscll
         db MSC_SYS_SYSFIL
@@ -2868,7 +2889,7 @@ cmdhlpc ld hl,cmdhlppth     ;* man file öffnen
         jp c,cmderr
         ld a,e
         ld (cmdhlphnd),a
-        ld de,(prgbnknum)   ;* header länge laden
+        ld de,(App_BnkNum)   ;* header länge laden
         ld hl,dirbufmem
         ld bc,7
         call syscll
@@ -2885,7 +2906,7 @@ cmdhlpc ld hl,cmdhlppth     ;* man file öffnen
         ld c,l              ;* header inhalt laden
         ld b,h
         ld a,(cmdhlphnd)
-        ld de,(prgbnknum)
+        ld de,(App_BnkNum)
         ld hl,dirbufmem
         call syscll
         db MSC_SYS_SYSFIL
@@ -2954,7 +2975,7 @@ cmdhlp6 ld a,(cmdhlphnd)    ;* zum textblock springen
         jr c,cmdhlpe
         ld a,d
 cmdhlp7 ld hl,shlpthnew2
-        ld de,(prgbnknum)
+        ld de,(App_BnkNum)
         push af
         call syscll
         db MSC_SYS_SYSFIL
@@ -3152,7 +3173,7 @@ cmdtim4 ld hl,cmdtiminp         ;eingabe
         call shlout
         ld a,(shlnum)
         add 128
-        ld de,(prgbnknum)
+        ld de,(App_BnkNum)
         ld d,0
         ld hl,shlpthnew
 
@@ -3326,7 +3347,7 @@ cmddat4 ld hl,cmddatinp         ;eingabe
         call shlout
         ld a,(shlnum)
         add 128
-        ld de,(prgbnknum)
+        ld de,(App_BnkNum)
         ld d,0
         ld hl,shlpthnew
 
@@ -3459,22 +3480,22 @@ shlpthnew2  ds 256
 
 shlmsgini1  db 2,"SYMBOS [",0
 shlmsgini2  db "]",13,10,0
-shlmsgini3  db "(C) Copyright 2000-2024 SymbiosiS",13,10
+shlmsgini3  db "(C) Copyright 2000-2025 SymbiosiS",13,10
             db "SymShell ",shvs_maj,".",shvs_min,13,10,13,10,0
 
 shlmsgver   ds 30
 shlmsgpau   db "Please press any key . . .",0
 shlmsgeof   db "Exit",13,10,0
 
-if computer_mode=0
+    if PLATFORM_TYPE=PLATFORM_CPC
 shlmsgg9k   db 2,"FULLSCREEN ACTIVATED:",13,10
             db   "Please switch your display to the internal CPC screen as",13,10
             db   "long as staying in fullscreen mode.",13,10,0
-elseif computer_mode=1
+elseif PLATFORM_TYPE=PLATFORM_MSX
 shlmsgg9k   db 2,"FULLSCREEN ACTIVATED:",13,10
             db   "Please switch your display to the original MSX screen as",13,10
             db   "long as staying in fullscreen mode.",13,10,0
-elseif computer_mode=3
+elseif PLATFORM_TYPE=PLATFORM_EPR
 shlmsgg9k   db 2,"FULLSCREEN ACTIVATED:",13,10
             db   "Please switch your display to the original EP screen as",13,10
             db   "long as staying in fullscreen mode.",13,10,0
@@ -3540,7 +3561,7 @@ shlout  push hl
         pop hl
         ld a,(shlnum)
         add 128
-        ld de,(prgbnknum)
+        ld de,(App_BnkNum)
         ld d,0
         call cnsoul
         jp cnserr
@@ -3596,7 +3617,7 @@ shlrep  ld a,(shlnum)
         inc a
         call z,shldir       ;aktuellen Pfad anzeigen, wenn Eingabe von Tastatur
 shlrep2 pop af
-        ld de,(prgbnknum)
+        ld de,(App_BnkNum)
         ld d,0
         ld hl,shlinplin
         call cnsinl         ;Zeile anfordern
@@ -3828,7 +3849,7 @@ shltab8 ld l,c
         ld h,b
         jr shltab4
 shltab9 ld hl,shlpthnew2
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         db #dd:ld l,#8e
         ld de,dirbufmem
@@ -4667,19 +4688,21 @@ trmc312 dec l
 ;### SCREEN-ROUTINEN ##########################################################
 ;==============================================================================
 
-if computer_mode=0
+    if PLATFORM_TYPE=PLATFORM_CPC
 scrymx  equ max_ylen
-elseif computer_mode=1
+elseif PLATFORM_TYPE=PLATFORM_MSX
 scrymx  equ max_ylen
-elseif computer_mode=2
+elseif PLATFORM_TYPE=PLATFORM_PCW
 scrymx  equ max_ylen
-elseif computer_mode=3
+elseif PLATFORM_TYPE=PLATFORM_EPR
 scrymx  equ max_ylen
-elseif computer_mode=4
+elseif PLATFORM_TYPE=PLATFORM_SVM
 scrymx  equ max_ylen
-elseif computer_mode=5
+elseif PLATFORM_TYPE=PLATFORM_NCX
 scrymx  equ max_ylen
-elseif computer_mode=6
+elseif PLATFORM_TYPE=PLATFORM_ZNX
+scrymx  equ max_ylen
+elseif PLATFORM_TYPE=PLATFORM_ISA
 scrymx  equ max_ylen
 endif
 
@@ -4689,7 +4712,7 @@ scrmod  db 0
 ;### Eingabe    A=Typ (0=Window, 1=Fullscreen)
 scrseta dw winini,winclr,winsru,winsrd,winplt,winfll,winfll,wincon,wincof
 scrsetb
-if     computer_mode=2
+if     PLATFORM_TYPE=PLATFORM_PCW
 else
         dw fulini,fulclr,fulsru,fulsrd,fulplt,fulfll,fulfls,fulcon,fulcof
 endif
@@ -4761,11 +4784,11 @@ if max_xlen=80
         ld b,0
         add a
         add a
-        add c
-        add a       ;*10
+        add c       ;*5
         ld l,a
         ld h,b
-        add hl,hl
+        add hl,hl   ;*10
+        add hl,hl   ;*20
         add hl,hl   ;*40
         add hl,hl   ;*80
         add hl,bc   ;*81
@@ -5104,14 +5127,14 @@ wincof  ld a,64
 ;### FULAKT -> Stoppt Desktop und aktiviert Fullscreen Mode
 ;### Ausgabe    CF=1 -> nicht möglich, da Desktop bereits eingefroren ist oder Fullscreen derzeit für Plattform nicht unterstützt wird
 fulakt
-if computer_mode=1
+if PLATFORM_TYPE=PLATFORM_MSX
         ld a,(cfgcpctyp)        ;no fullscreen for MSX1
         and #1f
         cp 7
         scf
         ret z
 endif
-if computer_mode=2              ;no fullscreen for PCW
+if     PLATFORM_TYPE=PLATFORM_PCW       ;no fullscreen for PCW
         scf
         ret
 else
@@ -5141,7 +5164,7 @@ fulakt1 push bc
         ld (ix+1),l
         inc ix:inc ix
         djnz fulakt1
-if computer_mode=0      ;*** CPC
+if PLATFORM_TYPE=PLATFORM_CPC      ;*** CPC
         ;ld a,(cfgcpctyp)
         ;rla
         ;jr nc,fulakt2      ;##!!## WOZU??
@@ -5159,12 +5182,18 @@ if computer_mode=0      ;*** CPC
         call fulset
         or a
         ret
-elseif computer_mode=1  ;*** MSX
+elseif PLATFORM_TYPE=PLATFORM_ISA   ;*** ISA
+        ;call fulclr             ;Bildschirm löschen
+        ;xor a
+        ;call fulpos             ;Scroll reset (?)
+        or a
+        ret
+elseif PLATFORM_TYPE=PLATFORM_MSX  ;*** MSX
         ld hl,#217
         ld de,fulaktt+9
         push de
         ld bc,1
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         add a:add a:add a:add a
         inc a
         rst #20:dw jmp_bnkcop
@@ -5200,7 +5229,7 @@ fulakt3 out (#98),a
         ret
 fulaktt db #04,#70,#03,#27,#02,#36,#07,#21,#08,#02,0,0,#12,#42
 
-elseif computer_mode=3  ;*** EP
+elseif PLATFORM_TYPE=PLATFORM_EPR  ;*** EP
         ld ix,mftdat5
         ld hl,jmp_bnk16c
         rst #28
@@ -5211,7 +5240,7 @@ elseif computer_mode=3  ;*** EP
         or a
         ret
 
-elseif computer_mode=4  ;*** SVM
+elseif PLATFORM_TYPE=PLATFORM_SVM  ;*** SVM
         in a,(P_VIDPTR_L):ld (fulscradr+0),a
         in a,(P_VIDPTR_H):ld (fulscradr+1),a
         in a,(P_VIDPTR_U):ld (fulscradr+2),a
@@ -5238,14 +5267,14 @@ fulakt5 otir
         ret
 svmcur  db 0,0,0,0,0,0,0,0,-1,-1,-1,-1,-1,-1,-1,-1
 
-elseif computer_mode=5  ;*** NC
+elseif PLATFORM_TYPE=PLATFORM_NCX  ;*** NC
         call fulclr
         ld a,#c0
         out (#00),a
         or a
         ret
 
-elseif computer_mode=6  ;*** NXT
+elseif PLATFORM_TYPE=PLATFORM_ZNX  ;*** ZNX
         nextreg SPRITE_CONTROL_NR_15,%00010100      ;switch off sprites, ULS order (ula/tilemap in front of layer2 and sprites)
         nextreg TILEMAP_CONTROL_NR_6B,%11001011     ;enable tilemap, 80x32, use attribs in map, palette 0, texmode on, res(0), 512tilemode, tilemap over ula
         nextreg TILEMAP_BASE_ADR_NR_6E,0            ;tilemap starts at offset 0 in page5
@@ -5260,7 +5289,7 @@ endif
 
 ;### FULOFF -> Deaktiviert Fullscreen Mode und kehrt zum Desktop zurück
 fuloff
-if     computer_mode=2
+if     PLATFORM_TYPE=PLATFORM_PCW
 else
         ld d,max_ylen
 fuloff1 push de
@@ -5292,7 +5321,7 @@ fuloff2 push bc
         djnz fuloff2
         ld a,DSK_SRV_DSKCNT     ;Desktop einschalten
         jp dsksrv
-if computer_mode=0      ;*** CPC
+    if PLATFORM_TYPE=PLATFORM_CPC   ;*** CPC
 fuloff0 call fulclr
         ld b,#7f                ;Mode wiederherstellen
         ld a,(fulbuf)
@@ -5302,32 +5331,48 @@ fuloff0 call fulclr
         call fulset
         ld de,25*256+80         ;Größe wiederherstellen
         jp fulini0
-elseif computer_mode=1  ;*** MSX
+elseif PLATFORM_TYPE=PLATFORM_ISA   ;*** ISA
+fuloff0 call fulclr
+        ld de,160               ;DE=bytes per line/2
+		ld hl,vga_frame+1-#0400
+        ld ix,#0300             ;point to framebuffer in bank 0 (0x0600), divided by 2.
+        call fuloff3
+        ld ix,#8300             ;point to framebuffer in bank 2 (0x0600), divided by 2.
+fuloff3 ld b,200
+fuloff4 ld a,ixl
+        out (port_io_bank0),a   ;lsb bank 0
+        ld a,ixh
+        out (port_io_bank2),a   ;msb bank 2
+        inc hl
+        add ix,de
+        djnz fuloff4            ;2 lines per loop, 200 times -> 400 lines
+        ret
+elseif PLATFORM_TYPE=PLATFORM_MSX  ;*** MSX
 fuloff0 ld bc,scrymx    ;24
         call fulakt4
         ld de,(fulbuf)
         set 7,e
         ld a,DSK_SRV_MODSET
         jp dsksrv
-elseif computer_mode=2  ;*** PCW
+elseif PLATFORM_TYPE=PLATFORM_PCW  ;*** PCW
         ;##!!## PCW
-elseif computer_mode=3  ;*** EP
+elseif PLATFORM_TYPE=PLATFORM_EPR  ;*** EP
 fuloff0 ld de,(fulbuf)
         set 7,e
         ld a,DSK_SRV_MODSET
         jp dsksrv
-elseif computer_mode=4  ;*** SVM
+elseif PLATFORM_TYPE=PLATFORM_SVM  ;*** SVM
 fuloff0 call fulcof
         ld de,(fulbuf)
         set 7,e
         ld a,DSK_SRV_MODSET
         jp dsksrv
-elseif computer_mode=5  ;*** NC
+elseif PLATFORM_TYPE=PLATFORM_NCX  ;*** NC
 fuloff0 ld de,(fulbuf)
         set 7,e
         ld a,DSK_SRV_MODSET
         jp dsksrv
-elseif computer_mode=6  ;*** NXT
+elseif PLATFORM_TYPE=PLATFORM_ZNX  ;*** ZNX
 fuloff0 nextreg SPRITE_CONTROL_NR_15,%00000011          ;SLU, sprites visible + no clipping
         nextreg CLIP_WINDOW_CONTROL_NR_1C,1             ;layer2 clip 256x128 in middle
         nextreg CLIP_LAYER2_NR_18,0
@@ -5342,7 +5387,7 @@ fuloff0 nextreg SPRITE_CONTROL_NR_15,%00000011          ;SLU, sprites visible + 
 endif
 endif
 
-if computer_mode=0
+if PLATFORM_TYPE=PLATFORM_CPC
 
 ;==============================================================================
 ;### SCREEN-ROUTINEN (CPC-FULLSCREEN) #########################################
@@ -5594,7 +5639,7 @@ fulset  ld a,h
 
 ;### FULREL -> Relociert Fullscreen-Textausgabe
 fulrel  ld ix,mftdat1
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         ld (ix+0),a
         ld (ix+3),a
         ld (ix+6),a
@@ -5635,7 +5680,345 @@ fulrel0 set 6,(hl)
         res 7,(hl)
         ret
 
-elseif computer_mode=1
+elseif PLATFORM_TYPE=PLATFORM_ISA
+
+fulscypos   db 0        ;current y-scroll position
+fulpltbuf   ds 80*8     ;b/w plot buffer
+
+ds -$ mod 8
+fulfnt8x8
+ds 32*8
+db #00,#00,#00,#00,#00,#00,#00,#00, #18,#3C,#3C,#18,#18,#00,#18,#00, #6C,#6C,#28,#00,#00,#00,#00,#00, #6C,#6C,#FE,#6C,#FE,#6C,#6C,#00, #18,#3E,#60,#3C,#06,#7C,#18,#00, #00,#C6,#CC,#18,#30,#66,#C6,#00
+db #38,#6C,#38,#76,#DC,#CC,#76,#00, #18,#18,#30,#00,#00,#00,#00,#00, #0C,#18,#30,#30,#30,#18,#0C,#00, #30,#18,#0C,#0C,#0C,#18,#30,#00, #00,#66,#3C,#FF,#3C,#66,#00,#00, #00,#18,#18,#7E,#18,#18,#00,#00
+db #00,#00,#00,#00,#00,#18,#18,#30, #00,#00,#00,#7E,#00,#00,#00,#00, #00,#00,#00,#00,#00,#18,#18,#00, #06,#0C,#18,#30,#60,#C0,#80,#00, #38,#6C,#C6,#D6,#C6,#6C,#38,#00, #18,#38,#18,#18,#18,#18,#7E,#00
+db #7C,#C6,#06,#1C,#30,#66,#FE,#00, #7C,#C6,#06,#3C,#06,#C6,#7C,#00, #1C,#3C,#6C,#CC,#FE,#0C,#1E,#00, #FE,#C0,#C0,#FC,#06,#C6,#7C,#00, #38,#60,#C0,#FC,#C6,#C6,#7C,#00, #FE,#C6,#0C,#18,#30,#30,#30,#00
+db #7C,#C6,#C6,#7C,#C6,#C6,#7C,#00, #7C,#C6,#C6,#7E,#06,#C6,#7C,#00, #00,#00,#18,#18,#00,#18,#18,#00, #00,#00,#18,#18,#00,#18,#18,#30, #0C,#18,#30,#60,#30,#18,#0C,#00, #00,#00,#7E,#00,#00,#7E,#00,#00
+db #60,#30,#18,#0C,#18,#30,#60,#00, #7C,#C6,#0C,#18,#18,#00,#18,#00, #7C,#C6,#DE,#DE,#DE,#C0,#78,#00, #38,#6C,#C6,#FE,#C6,#C6,#C6,#00, #FC,#66,#66,#7C,#66,#66,#FC,#00, #3C,#66,#C0,#C0,#C0,#66,#3C,#00
+db #F8,#6C,#66,#66,#66,#6C,#F8,#00, #FE,#62,#68,#78,#68,#62,#FE,#00, #FE,#62,#68,#78,#68,#60,#F0,#00, #3C,#66,#C0,#C0,#CE,#66,#3A,#00, #C6,#C6,#C6,#FE,#C6,#C6,#C6,#00, #3C,#18,#18,#18,#18,#18,#3C,#00
+db #1E,#0C,#0C,#0C,#CC,#CC,#78,#00, #E6,#66,#6C,#78,#6C,#66,#E6,#00, #F0,#60,#60,#60,#62,#66,#FE,#00, #C6,#EE,#FE,#FE,#D6,#C6,#C6,#00, #C6,#E6,#F6,#DE,#CE,#C6,#C6,#00, #7C,#C6,#C6,#C6,#C6,#C6,#7C,#00
+db #FC,#66,#66,#7C,#60,#60,#F0,#00, #7C,#C6,#C6,#C6,#C6,#CE,#7C,#0E, #FC,#66,#66,#7C,#6C,#66,#E6,#00, #3C,#66,#30,#18,#0C,#66,#3C,#00, #7E,#7E,#5A,#18,#18,#18,#3C,#00, #66,#66,#66,#66,#66,#66,#3C,#00
+db #C6,#C6,#C6,#C6,#C6,#6C,#38,#00, #C6,#C6,#C6,#D6,#D6,#FE,#6C,#00, #C6,#C6,#6C,#38,#6C,#C6,#C6,#00, #66,#66,#66,#3C,#18,#18,#3C,#00, #FE,#C6,#8C,#18,#32,#66,#FE,#00, #3C,#30,#30,#30,#30,#30,#3C,#00
+db #C0,#60,#30,#18,#0C,#06,#02,#00, #3C,#0C,#0C,#0C,#0C,#0C,#3C,#00, #10,#38,#6C,#C6,#00,#00,#00,#00, #00,#00,#00,#00,#00,#00,#00,#FF, #30,#18,#0C,#00,#00,#00,#00,#00, #00,#00,#78,#0C,#7C,#CC,#76,#00
+db #E0,#60,#7C,#66,#66,#66,#DC,#00, #00,#00,#7C,#C6,#C0,#C6,#7C,#00, #1C,#0C,#7C,#CC,#CC,#CC,#76,#00, #00,#00,#7C,#C6,#FE,#C0,#7C,#00, #3C,#66,#60,#F8,#60,#60,#F8,#00, #00,#00,#76,#CC,#CC,#7C,#0C,#F8
+db #E0,#60,#6C,#76,#66,#66,#E6,#00, #18,#00,#38,#18,#18,#18,#3C,#00, #06,#00,#06,#06,#06,#66,#66,#3C, #E0,#60,#66,#6C,#78,#6C,#E6,#00, #38,#18,#18,#18,#18,#18,#3C,#00, #00,#00,#EC,#FE,#D6,#D6,#D6,#00
+db #00,#00,#DC,#66,#66,#66,#66,#00, #00,#00,#7C,#C6,#C6,#C6,#7C,#00, #00,#00,#DC,#66,#66,#7C,#60,#F0, #00,#00,#76,#CC,#CC,#7C,#0C,#1E, #00,#00,#DC,#76,#60,#60,#F0,#00, #00,#00,#7E,#C0,#7C,#06,#FC,#00
+db #30,#30,#FC,#30,#30,#36,#1C,#00, #00,#00,#CC,#CC,#CC,#CC,#76,#00, #00,#00,#C6,#C6,#C6,#6C,#38,#00, #00,#00,#C6,#D6,#D6,#FE,#6C,#00, #00,#00,#C6,#6C,#38,#6C,#C6,#00, #00,#00,#C6,#C6,#C6,#7E,#06,#FC
+db #00,#00,#7E,#4C,#18,#32,#7E,#00, #0E,#18,#18,#70,#18,#18,#0E,#00, #18,#18,#18,#18,#18,#18,#18,#00, #70,#18,#18,#0E,#18,#18,#70,#00, #76,#DC,#00,#00,#00,#00,#00,#00, #00,#00,#00,#00,#00,#00,#00,#00
+ds 128*8
+
+
+;### FULINI -> Initialisiert den Bildschirm und updatet Größe und Farben
+;### Eingabe    A=Rahmen, E=Paper, D=Pen, C=Xlen, B=Ylen
+fulini  ld a,e                  ;patch colours
+        ld (fulclrp+1),a
+        ld (fulfls+1),a
+        ld (fulconr+1),a
+        out (P_BLITFILL2),a
+        ld a,d
+        ld (fulclrr+1),a
+        ld (fulconp+1),a
+        out (P_BLITFILL1),a
+        call fulclr0
+        ld a,(scryln)           ;center display
+        push af
+        ld de,9
+        call clcm16
+        srl h:rr l
+        ld a,200
+        sub l
+        ld hl,vga_frame+1-#0400
+        ld e,a
+        ld d,0
+        add hl,de
+        ld (fulpos7+1),hl
+        pop bc
+        ld c,0                  ;plot current text
+fulini2 push bc
+        ld e,0
+        ld d,c
+        push de
+        call memplt0            ;HL=textadr
+        push hl
+        call clclen             ;C=length
+        pop hl
+        pop de
+        inc c
+        dec c
+        jr z,fulini3
+        ld e,0
+        call fulplt
+fulini3 pop bc
+        inc c
+        djnz fulini2
+        ld a,(memcfl)           ;show cursor if active
+        or a
+        ld de,(memcps)
+        call nz,fulcon
+        xor a
+        jp fulpos               ;reset, show screen
+
+;### FULCLR -> clear screen
+fulclr  call fulclr0
+        jp fulshw
+fulclr0 call fulhid
+        xor a
+        ld (fulscypos),a
+        ld bc,44*256+80
+        ld de,0
+        ld l,b
+        ld h,e
+        add hl,hl
+        add hl,hl
+        add hl,hl
+        ld a,l:out (P_BLITSIZY_L),a     ;set full ylen
+        ld a,h:out (P_BLITSIZY_H),a
+        xor a
+        call fulblt3
+        xor a
+        out (P_BLITDSTY_L),a            ;set ypos always=0 (ignore scrolling)
+        out (P_BLITDSTY_H),a
+fulclrp ld a,0
+        out (P_BLITFILL1),a
+        ld a,D_BMFILL+D_BLITP44
+        out (P_BLITCTRL),a              ;fill screen
+fulclrr ld a,0
+        out (P_BLITFILL1),a
+        ret
+
+;### FULSRU -> Scrollt Bildschirm nach oben und fügt unten Leerzeile ein
+fulsru  ld a,(scrxln)
+        ld c,a
+        ld b,1
+        ld de,0
+        call fulfls         ;clear upper line (will become last line)
+        ld a,(fulscypos)
+        inc a               ;increase yofs for scrolling up
+        ld hl,scryln
+        cp (hl)
+        jp nz,fulpos
+        xor a
+        jp fulpos
+
+;### FULSRD -> Scrollt Bildschirm nach unten und fügt oben Leerzeile ein
+fulsrd  ld a,(scryln)
+        dec a
+        ld d,a
+        ld e,0
+        ld a,(scrxln)
+        ld c,a
+        ld b,1
+        call fulfls         ;clear last line (will become first line)
+        ld a,(fulscypos)
+        sub 1               ;decrease yofs for scrolling down
+        jp nc,fulpos
+        ld a,(scryln)
+        dec a
+        jp fulpos
+
+;### FULPLT -> Plots text to screen (using blitter)
+;### Input      HL=text, E=column, D=line, C=length
+;### Destroyed  AF,BC,DE,HL,IX,IYL
+fulplt  ld iyl,c            ;iyl=counter
+        push hl
+        call fulblt
+        pop ix              ;ix=text
+        ld de,fulpltbuf     ;de=b/w bitmap buffer
+fulplt1 ld l,(ix+0)
+        ld h,0
+        inc ix              ;next textbyte
+        add hl,hl
+        add hl,hl
+        add hl,hl
+        ld bc,fulfnt8x8
+        add hl,bc
+        ex de,hl            ;hl=b/w bitmap buffer, de=char matrix
+        ld bc,80            ;29
+        ld a,(de):ld (hl),a:inc e:add hl,bc ;8
+        ld a,(de):ld (hl),a:inc e:add hl,bc
+        ld a,(de):ld (hl),a:inc e:add hl,bc
+        ld a,(de):ld (hl),a:inc e:add hl,bc
+        ld a,(de):ld (hl),a:inc e:add hl,bc
+        ld a,(de):ld (hl),a:inc e:add hl,bc
+        ld a,(de):ld (hl),a:inc e:add hl,bc
+        ld a,(de):ld (hl),a
+        ld bc,-7*80+1
+        add hl,bc           ;66
+        ex de,hl            ;de=next b/w bitmap buffer
+        dec iyl
+        jr nz,fulplt1       ;29+66+6 -> 101/char
+		ld a,D_BLITP14+D_BMTEXT
+        out (P_BLITCTRL),a      ;copy to screen
+        ret
+
+;### FULFLL -> Füllt Bildschirm-Bereich mit gleichem Zeichen
+;### Eingabe    A=Zeichen, E=Spalte, D=Zeile, C=XLen, B=YLen
+fulflls ds 80
+fulfll  push bc
+        ld hl,fulflls
+        ld (hl),a
+        dec c
+        jr z,fulfll1
+        push de
+        ld de,fulflls+1
+        ldir                    ;fill text with char
+        pop de
+fulfll1 pop bc
+        ld hl,fulflls
+        push bc
+        push de
+        call fulplt             ;prepare and plot first line
+        pop de
+        pop bc
+        dec b
+        ret z
+fulfll2 inc d
+        call fulblt1            ;set next line
+		ld a,D_BLITP14+D_BMTEXT
+        out (P_BLITCTRL),a      ;plot next line
+        djnz fulfll2
+        ret
+
+;### FULFLS -> Füllt Bildschirm-Bereich mit Spaces
+;### Eingabe    E=Spalte, D=Zeile, C=XLen, B=YLen
+fulfls  ld a,0
+        out (P_BLITFILL1),a
+fulfls1 call fulblt0            ;prepare first line
+fulfls2 ld a,D_BMFILL+D_BLITP44
+        out (P_BLITCTRL),a      ;fill line
+        dec b
+        jp z,fulclrr
+        inc d
+        call fulblt1            ;prepare next line
+        jr fulfls2
+
+;### FULCON -> Cursor positionieren und einblenden
+;### Eingabe    E=Spalte, D=Zeile
+fulcps  dw 0
+fulcon  ld (fulcps),de
+fulcon1 ld c,1
+        call fulblt0
+        ld a,13
+        out (P_BLITFILL1),a
+        out (P_BLITFILL2),a
+        ld a,D_BMFXOR+D_BLITP44
+        out (P_BLITCTRL),a      ;invert cursor
+fulconp ld a,0
+        out (P_BLITFILL1),a
+fulconr ld a,0
+        out (P_BLITFILL2),a
+        ret
+
+;### FULCOF -> Cursor ausblenden
+fulcof  ld de,(fulcps)
+        jr fulcon1
+
+;### FULHID -> Blendet Bildschirm aus
+fulhid  ld bc,256*2+400-256         ;b=2 loops, c 1st loop 400-256=144, 2nd loop 256, 144+256=400
+        ld hl,vga_frame+1-#0400
+fulhid1 ld a,#60
+        out (port_io_bank0),a
+        ld a,#ff
+        out (port_io_bank2),a       ;show last line on whole screen
+        inc hl
+        dec c
+        jr nz,fulhid1
+        djnz fulhid1
+        ret
+
+;### FULSHW -> Blendet Bildschirm ein
+fulshw  ld a,(fulscypos)
+        jr fulpos1
+
+;### FULPOS -> set scroll position
+;### Input      A=new position (0..scryln-1)
+fulpos  ld (fulscypos),a
+fulpos1 ld c,a              ;c=first line
+        add a
+        add a
+        add c
+        add 3
+        bit 7,a
+        jr z,fulpos5
+        add 3               ;>=#80 -> +#300
+fulpos5 ld ixh,a
+        ld ixl,0            ;ix=#0300+line*8*160 (=5*256)
+        ld iy,(scryln)
+        ld iyh,iyl
+        ld de,160
+fulpos7 ld hl,vga_frame+1-#0400
+fulpos2 ld b,8
+fulpos3 ld a,ixl
+        out (port_io_bank0),a   ;lsb bank 0
+        ld a,ixh
+        out (port_io_bank2),a   ;msb bank 2
+        inc hl
+        add ix,de
+        rla
+        jr c,fulpos6
+        ld a,ixh
+        rla
+        jr nc,fulpos6
+        ld ix,#8300
+fulpos6 djnz fulpos3
+        inc hl
+        inc c
+        ld a,c
+        cp iyh
+        jr nz,fulpos4
+        ld c,0
+        ld ix,#0300
+fulpos4 dec iyl
+        jr nz,fulpos2
+        ret
+
+;### FULBLT -> sets blitter source, size and destination parameters
+;### Input      E=column, D=line, C=length
+;### Destroyed  AF,HL
+fulblt  ld hl,fulpltbuf
+        ld a,l:out (P_BLITSRCA_L),a
+        ld a,h:out (P_BLITSRCA_H),a
+        ld a,(App_BnkNum)
+               out (P_BLITSRCA_U),a     ;source address
+        xor a: out (P_BLITSRCX_L),a
+               out (P_BLITSRCX_H),a     ;source xpos=0
+               out (P_BLITSRCY_L),a
+               out (P_BLITSRCY_H),a     ;source ypos=0
+                out (P_BLITSRCL_H),a
+        ld a,80:out (P_BLITSRCL_L),a    ;source bytes/line=80
+fulblt0 ld a,8
+               out (P_BLITSIZY_L),a         ;*** set size and destination only
+        xor a: out (P_BLITSIZY_H),a     ;ysize=8
+fulblt3 ld l,c
+        ld h,a
+        add hl,hl
+        add hl,hl
+        add hl,hl
+        ld a,l:out (P_BLITSIZX_L),a
+        ld a,h:out (P_BLITSIZX_H),a     ;xsize=length*8
+fulblt1 ld l,e                              ;*** set destination only
+        ld h,0
+        add hl,hl
+        add hl,hl
+        add hl,hl
+        ld a,l:out (P_BLITDSTX_L),a
+        ld a,h:out (P_BLITDSTX_H),a     ;destination xpos=column*8
+        ld a,(fulscypos)
+        add d
+        ld hl,scryln
+        sub (hl)
+        jr nc,fulblt2
+        add (hl)
+fulblt2 ld l,a
+        ld h,0
+        add hl,hl
+        add hl,hl
+        add hl,hl
+        ld a,l:out (P_BLITDSTY_L),a
+        ld a,h:out (P_BLITDSTY_H),a     ;destination ypos=((line+scroll) mod max)*8
+        ret
+
+
+elseif PLATFORM_TYPE=PLATFORM_MSX
 
 ;==============================================================================
 ;### SCREEN-ROUTINEN (MSX-FULLSCREEN) #########################################
@@ -6070,9 +6453,9 @@ vdpwai  ld  a,2
         jr c,vdpwai
         ret
 
-elseif computer_mode=2
+elseif PLATFORM_TYPE=PLATFORM_PCW
     ;##!!## PCW
-elseif computer_mode=3
+elseif PLATFORM_TYPE=PLATFORM_EPR
 
 ;==============================================================================
 ;### SCREEN-ROUTINEN (EP-FULLSCREEN) ##########################################
@@ -6295,7 +6678,7 @@ fulset  ld (fulofs),a
 
 ;### FULREL -> Relociert Fullscreen-Textausgabe
 fulrel  ld ix,mftdat1
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         ld (ix+00),a
         ld (ix+03),a
         ld (ix+06),a
@@ -6334,7 +6717,7 @@ fulrel0 set 6,(hl)
         res 7,(hl)
         ret
 
-elseif computer_mode=4
+elseif PLATFORM_TYPE=PLATFORM_SVM
 
 ;==============================================================================
 ;### SCREEN-ROUTINEN (SVM-FULLSCREEN) #########################################
@@ -6398,7 +6781,7 @@ fulsru
 fulclr
 ;### FULALL -> redraw the complete screen
 fulall  di
-        ld a,(prgbnknum)  :out (P_MEMPTR1_U),a
+        ld a,(App_BnkNum)  :out (P_MEMPTR1_U),a
         ld a,(fulscradr+2):out (P_MEMPTR2_U),a
         ld de,scrmap
         ld hl,(fulscradr+0)
@@ -6434,7 +6817,7 @@ fulcon  ld a,e:out (P_TXTCURX),a
 fulplt  di
         ld a,l          :out (P_MEMPTR1_L),a
         ld a,h          :out (P_MEMPTR1_H),a
-        ld a,(prgbnknum):out (P_MEMPTR1_U),a
+        ld a,(App_BnkNum):out (P_MEMPTR1_U),a
         call fuladr
         ld a,c          :out (P_MEMDMA_L),a
         xor a           :out (P_MEMDMA_H),a
@@ -6481,7 +6864,7 @@ fuladr1 di
                out (P_MEMPTR2_U),a
         ret
 
-elseif computer_mode=5
+elseif PLATFORM_TYPE=PLATFORM_NCX
 
 ;==============================================================================
 ;### SCREEN-ROUTINEN (NC-FULLSCREEN) ##########################################
@@ -6632,7 +7015,7 @@ dw nctoutl+2, nctoutm+2, nctoutn+3, mftsrua+2, mftsrd+2
 dw 0
 
 fulrel  ld ix,mftdat1
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         ld (ix+0),a
         ld (ix+3),a
         ld (ix+6),a
@@ -6657,10 +7040,10 @@ fulrel1 ld e,(hl)
         ex de,hl
         jr fulrel1
 
-elseif computer_mode=6
+elseif PLATFORM_TYPE=PLATFORM_ZNX
 
 ;==============================================================================
-;### SCREEN-ROUTINEN (NXT-FULLSCREEN) #########################################
+;### SCREEN-ROUTINEN (ZNX-FULLSCREEN) #########################################
 ;==============================================================================
 
 ;### FULINI -> Initialisiert den Bildschirm und updatet Größe und Farben
@@ -6806,7 +7189,7 @@ fuladr  ld a,d
 fulrelt dw nxtini1+2,nxtall+2,nxtplt+2, 0
 
 fulrel  ld ix,mftdat1
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         ld (ix+0),a     ;mftdat1
         ld (ix+3),a     ;mftdat2
         ld (ix+6),a     ;mftdat3
@@ -6834,7 +7217,7 @@ endif
 ;### DIREXI -> Test, ob Directory existiert
 ;### Eingabe    HL=Neues Directory
 ;### Ausgabe    CF=0 ok, CF=1 Fehler (A=Fehlercode)
-direxi  ld a,(prgbnknum)
+direxi  ld a,(App_BnkNum)
         db #dd:ld h,a
         call syscll
         db MSC_SYS_SYSFIL
@@ -6998,7 +7381,7 @@ dirfil2 push hl                 ;File mit Pfad zusammenfügen
 ;###            CF=1 -> A=Fehler-Code (1=Datei existiert nicht, 2=Datei ist kein Programm, 3=Fehler beim Laden [L=Filemanager-Errorcode],
 ;###                                   4=Speicher voll)
 dirrun  ld c,MSC_SYS_PRGRUN     ;Datei starten
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
 dirrun0 or 128
         ld d,a
         ld a,128
@@ -7105,7 +7488,7 @@ muldir  ld e,a
         ld a,e
 muldir1 db #dd:ld l,a
         ld hl,shlpthnew
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         ld de,dirbufmem
         ld (muldiradr),de
@@ -7465,7 +7848,7 @@ cfgpth  ld hl,cfgpthfil
 ;### CFGLOD -> load config data
 cfglod  call cfgpth
         ld hl,(prgparp)
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         call syscll                 ;open file
         db MSC_SYS_SYSFIL
@@ -7473,7 +7856,7 @@ cfglod  call cfgpth
         ret c
         ld hl,cfg_beg
         ld bc,cfg_end-cfg_beg
-        ld de,(prgbnknum)
+        ld de,(App_BnkNum)
         push af
         call syscll                 ;load configdata
         db MSC_SYS_SYSFIL
@@ -7487,7 +7870,7 @@ cfglod  call cfgpth
 ;### CFGSAV -> save config data
 cfgsav  call cfgpth
         ld hl,(prgparp)
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         db #dd:ld h,a
         xor a
         call syscll                 ;create file
@@ -7496,7 +7879,7 @@ cfgsav  call cfgpth
         ret c
         ld hl,cfg_beg
         ld bc,cfg_end-cfg_beg
-        ld de,(prgbnknum)
+        ld de,(App_BnkNum)
         push af
         call syscll                 ;save configdata
         db MSC_SYS_SYSFIL
@@ -8017,7 +8400,7 @@ iniver  ld e,7
         pop hl
         inc hl:inc hl
         ld de,shlmsgver
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         add a:add a:add a:add a
         pop bc
         push af
@@ -8050,38 +8433,43 @@ iniver3 ld hl,jmp_sysinf        ;Computer-Typ holen
 
         ld a,(cfgcpctyp)        ;plattform check
         and #1f
-if computer_mode=0          ;CPC -> 0-4 OK
+    if PLATFORM_TYPE=PLATFORM_CPC      ;CPC -> 0-4 OK
         cp 4+1
         ccf
-elseif computer_mode=1      ;MSX -> 7-10 OK
+elseif PLATFORM_TYPE=PLATFORM_MSX      ;MSX -> 7-10 OK
         cp 7
         jr c,iniver1
         cp 10+1
         ccf
-elseif computer_mode=2      ;PCW -> 12-13 OK
+elseif PLATFORM_TYPE=PLATFORM_PCW      ;PCW -> 12-13 OK
         cp 12
         jr c,iniver1
         cp 13+1
         ccf
-elseif computer_mode=3      ;EP  -> 6 OK
+elseif PLATFORM_TYPE=PLATFORM_EPR      ;EP  -> 6 OK
         cp 6
         jr c,iniver1
         cp 6+1
         ccf
-elseif computer_mode=4      ;SVM -> 18 OK
+elseif PLATFORM_TYPE=PLATFORM_SVM      ;SVM -> 18 OK
         cp 18
         jr c,iniver1
         cp 18+1
         ccf
-elseif computer_mode=5      ;NC  -> 15-17 OK
+elseif PLATFORM_TYPE=PLATFORM_NCX      ;NC  -> 15-17 OK
         cp 15
         jr c,iniver1
         cp 17+1
         ccf
-elseif computer_mode=6      ;NXT -> 20 OK
+elseif PLATFORM_TYPE=PLATFORM_ZNX      ;NXT -> 20 OK
         cp 20
         jr c,iniver1
         cp 20+1
+        ccf
+elseif PLATFORM_TYPE=PLATFORM_ISA      ;ISA -> 19 OK
+        cp 19
+        jr c,iniver1
+        cp 19+1
         ccf
 endif
 iniver1 ret nc
@@ -8214,7 +8602,7 @@ SySHIn3 ld a,c
 hlpopn  ld a,(SySystem_HLPFLG)
         or a
         jp z,prgprz0
-        ld a,(prgbnknum)
+        ld a,(App_BnkNum)
         ld d,a
         ld a,PRC_ID_SYSTEM
         ld c,MSC_SYS_PRGRUN
@@ -8235,7 +8623,7 @@ prgdatbeg
 ;--- CPC ----------------------------------------------------------------------
 ;==============================================================================
 
-if computer_mode=0
+if PLATFORM_TYPE=PLATFORM_CPC
 
 mftchrtab
 dw mftchr177,mftchr177,mftchr177,mftchr177,mftchr177,mftchr177,mftchr177,mftchr177,mftchr177,mftchr177,mftchr177,mftchr177,mftchr177,mftchr177,mftchr177,mftchr177
@@ -8550,7 +8938,7 @@ mftchr256 ;for relocating
 ;--- EP -----------------------------------------------------------------------
 ;==============================================================================
 
-elseif computer_mode=3
+elseif PLATFORM_TYPE=PLATFORM_EPR
 
 mftchrtab
 dw mftchr127,mftchr127,mftchr127,mftchr127,mftchr127,mftchr127,mftchr127,mftchr127,mftchr127,mftchr127,mftchr127,mftchr127,mftchr127,mftchr127,mftchr127,mftchr127
@@ -8850,7 +9238,7 @@ mftchr128   ;for relocating
 ;--- SVM ----------------------------------------------------------------------
 ;==============================================================================
 
-elseif computer_mode=4
+elseif PLATFORM_TYPE=PLATFORM_SVM
 
 svmfnt
 incbin"App-Shell-SVM.fnt"
@@ -8859,7 +9247,7 @@ incbin"App-Shell-SVM.fnt"
 ;--- NC -----------------------------------------------------------------------
 ;==============================================================================
 
-elseif computer_mode=5
+elseif PLATFORM_TYPE=PLATFORM_NCX
 
 nctfnt
 db #00,#00,#00,#00,#00, #00,#00,#00,#00,#00, #00,#00,#00,#00,#00, #00,#00,#00,#00,#00, #00,#00,#00,#00,#00, #00,#00,#00,#00,#00, 0,0  ;
@@ -9160,7 +9548,7 @@ nctoutq add 0   ;nctfnt/256
 ;--- NXT ----------------------------------------------------------------------
 ;==============================================================================
 
-elseif computer_mode=6
+elseif PLATFORM_TYPE=PLATFORM_ZNX
 
 nxtfnt
 ds 32*8
@@ -9256,28 +9644,37 @@ fulbuf  ds 16*2+2   ;mode, col0, col1, col2, col3
 cfg_beg
 
 ;### Text-Bildschirm
-if computer_mode=2
+    if PLATFORM_TYPE=PLATFORM_PCW
 scrxln  db 80
 scryln  db 25
 scrpap  db 1
 scrpen  db 0
-elseif computer_mode=4
+scrbrd  db 2
+elseif PLATFORM_TYPE=PLATFORM_SVM
 scrxln  db 80
 scryln  db 25
 scrpap  db 1
 scrpen  db 8
-elseif computer_mode=6
+scrbrd  db 2
+elseif PLATFORM_TYPE=PLATFORM_ZNX
 scrxln  db 80
 scryln  db 25
 scrpap  db 1
 scrpen  db 8
+scrbrd  db 2
+elseif PLATFORM_TYPE=PLATFORM_ISA
+scrxln  db 80
+scryln  db 25
+scrpap  db 1
+scrpen  db 8
+scrbrd  db 7
 else
 scrxln  db 60
 scryln  db 20
 scrpap  db 1
 scrpen  db 0
-endif
 scrbrd  db 2
+endif
 
 cfg_end
 
@@ -9286,24 +9683,26 @@ prgmsginf1 db "SymShell",0
 prgmsginf2 db " Version ",shvs_maj,".",shvs_min," (Build "
 read "..\..\..\SRC-Main\build.asm"
            db "pdt)",0
-prgmsginf3 db " Copyright <c> 2024 SymbiosiS",0
+prgmsginf3 db " Copyright <c> 2025 SymbiosiS",0
 
 prgmsgwpf1 db "Wrong platform! This is SymShell",0
 prgmsgwpf2 db "for the "
-if computer_mode=0
+    if PLATFORM_TYPE=PLATFORM_CPC
                        db "AMSTRAD CPC.",0
-elseif computer_mode=1
+elseif PLATFORM_TYPE=PLATFORM_MSX
                        db "MSX2/2+/TURBOR.",0
-elseif computer_mode=2
+elseif PLATFORM_TYPE=PLATFORM_PCW
                        db "AMSTRAD PCW JOYCE.",0
-elseif computer_mode=3
+elseif PLATFORM_TYPE=PLATFORM_EPR
                        db "ENTERPRISE 64/128.",0
-elseif computer_mode=4
+elseif PLATFORM_TYPE=PLATFORM_SVM
                        db "SYMBOS VM.",0
-elseif computer_mode=5
+elseif PLATFORM_TYPE=PLATFORM_NCX
                        db "AMSTRAD NC1x0/200.",0
-elseif computer_mode=6
+elseif PLATFORM_TYPE=PLATFORM_ZNX
                        db "ZX SPECTRUM NEXT.",0
+elseif PLATFORM_TYPE=PLATFORM_ISA
+                       db "ISETTA TTL.",0
 endif
 prgmsgwpf3 db "Please replace cmd.exe .",0
 
@@ -9317,13 +9716,17 @@ prgtxtno    db "No",0
 
 ;### Menues
 prgwinmentx1 db "File",0
-prgwinmen1tx1 db "Run...",0
-prgwinmen1tx2 db "Properties",0
-prgwinmen1tx3 db "Quit",0
+prgwinmen1tx1 db 6,128,-1:dw menicn_settings    +1:db " Preferences...",0
+prgwinmen1tx2 db 6,128,-1:dw menicn_quit        +1:db " Quit",0
 
 prgwinmentx2 db "?",0
-prgwinmen2tx1 db "Index",0
-prgwinmen2tx2 db "About SymShell...",0
+prgwinmen2tx1 db 6,128,-1:dw menicn_help        +1:db " Help topics",0
+prgwinmen2tx2 db 6,128,-1:dw menicn_about       +1:db " About",0
+
+menicn_settings     db 4,8,7:dw $+7,$+4,28:db 5: db #66,#6c,#66,#66, #6c,#6c,#6c,#66, #6f,#cd,#cf,#66, #cc,#c1,#cc,#c6, #ff,#cc,#cf,#f6, #6c,#fc,#fc,#66, #6f,#6c,#6f,#66
+menicn_quit         db 4,8,7:dw $+7,$+4,28:db 5: db #11,#16,#16,#66, #14,#46,#11,#66, #14,#11,#1e,#16, #14,#1e,#ee,#e1, #14,#11,#1e,#16, #14,#46,#11,#66, #11,#16,#16,#66
+menicn_help         db 4,8,7:dw $+7,$+4,28:db 5: db #66,#1f,#f1,#66, #61,#fc,#cf,#16, #1f,#ff,#fc,#f1, #ff,#fc,#cc,#f1, #ff,#ff,#ff,#18, #1f,#cf,#f1,#81, #61,#ff,#18,#16
+menicn_about        db 4,8,7:dw $+7,$+4,28:db 5: db #66,#10,#07,#66, #66,#10,#07,#66, #66,#66,#66,#66, #61,#00,#07,#66, #66,#10,#07,#66, #66,#10,#07,#66, #61,#00,#00,#76
 
 ;### Config
 configtxt0  db "Size and position"
@@ -9363,7 +9766,7 @@ coltxt15    db "Brgt red",0
 scrbuf  ds max_xlen+1
 scrcur  db " ",0    ;Cursor
 
-smlfnt  db 6,32         ;Font
+smlfnt  db 128+6,32         ;Font
 db 4,#00,#00,#00,#00,#00,#00,#00,#00,#00,#00,#00,#00,#00,#00,#00
 db 4,#40,#40,#40,#00,#40,#00,#00,#00,#00,#00,#00,#00,#00,#00,#00
 db 4,#A0,#A0,#00,#00,#00,#00,#00,#00,#00,#00,#00,#00,#00,#00,#00
@@ -9616,7 +10019,7 @@ prgmsgb ds 14
 
 ;### INFO-/ERROR-FENSTER ######################################################
 
-prgmsginf  dw prgmsginf1,4*1+2,prgmsginf2,4*1+2,prgmsginf3,4*1+2,prgicnbig
+prgmsginf  dw prgmsginf1,4*1+2,prgmsginf2,4*1+2,prgmsginf3,4*1+2,0,prgicnbig,prgicn16c
 prgmsgwpf  dw prgmsgwpf1,4*1+2,prgmsgwpf2,4*1+2,prgmsgwpf3,4*1+2
 
 ;### HAUPT-FENSTER ############################################################
@@ -9624,8 +10027,8 @@ prgmsgwpf  dw prgmsgwpf1,4*1+2,prgmsgwpf2,4*1+2,prgmsgwpf3,4*1+2
 prgwindat dw #3501,0,10,10,244,124,0,6,244,124+12,244,124,244,124,prgicnsml,prgwintit,0,prgwinmen,prgwingrp,0,0:ds 136+14
 
 prgwinmen  dw 2, 1+4,prgwinmentx1,prgwinmen1,0, 1+4,prgwinmentx2,prgwinmen2,0
-prgwinmen1 dw 4, 1,prgwinmen1tx1,00,0, 1,prgwinmen1tx2,cfgset,0, 1+8,0,0,0, 1,prgwinmen1tx3,prgend,0
-prgwinmen2 dw 3, 1,prgwinmen2tx1,hlpopn,0, 1+8,0,0,0, 1,prgwinmen2tx2,prginf,0
+prgwinmen1 dw 3, 17,prgwinmen1tx1,cfgset,0, 1+8,0,0,0, 17,prgwinmen1tx2,prgend,0
+prgwinmen2 dw 3, 17,prgwinmen2tx1,hlpopn,0, 1+8,0,0,0, 17,prgwinmen2tx2,prginf,0
 
 prgwintxl equ max_ylen-25
 
@@ -9658,7 +10061,8 @@ dw     00,255*256+05,6*21+prgwinlin,2,6*21+8,320,06,0   ;23=Textzeile 21
 dw     00,255*256+05,6*22+prgwinlin,2,6*22+8,320,06,0   ;24=Textzeile 22
 dw     00,255*256+05,6*23+prgwinlin,2,6*23+8,320,06,0   ;25=Textzeile 23
 dw     00,255*256+05,6*24+prgwinlin,2,6*24+8,320,06,0   ;26=Textzeile 24
-if max_ylen=50
+if max_ylen=25
+else
 dw     00,255*256+05,6*25+prgwinlin,2,6*25+8,320,06,0   ;27=Textzeile 25
 dw     00,255*256+05,6*26+prgwinlin,2,6*26+8,320,06,0   ;28=Textzeile 26
 dw     00,255*256+05,6*27+prgwinlin,2,6*27+8,320,06,0   ;29=Textzeile 27
@@ -9678,12 +10082,14 @@ dw     00,255*256+05,6*40+prgwinlin,2,6*40+8,320,06,0   ;42=Textzeile 40
 dw     00,255*256+05,6*41+prgwinlin,2,6*41+8,320,06,0   ;43=Textzeile 41
 dw     00,255*256+05,6*42+prgwinlin,2,6*42+8,320,06,0   ;44=Textzeile 42
 dw     00,255*256+05,6*43+prgwinlin,2,6*43+8,320,06,0   ;45=Textzeile 43
+if max_ylen=50
 dw     00,255*256+05,6*44+prgwinlin,2,6*44+8,320,06,0   ;46=Textzeile 44
 dw     00,255*256+05,6*45+prgwinlin,2,6*45+8,320,06,0   ;47=Textzeile 45
 dw     00,255*256+05,6*46+prgwinlin,2,6*46+8,320,06,0   ;48=Textzeile 46
 dw     00,255*256+05,6*47+prgwinlin,2,6*47+8,320,06,0   ;49=Textzeile 47
 dw     00,255*256+05,6*48+prgwinlin,2,6*48+8,320,06,0   ;50=Textzeile 48
 dw     00,255*256+05,6*49+prgwinlin,2,6*49+8,320,06,0   ;51=Textzeile 49
+endif
 endif
 prgwinobj0
 dw     00,255*256+64,     prgwincur1,   2,   8,4,6,0    ;27=Cursor An
@@ -9774,13 +10180,13 @@ configfsz   db 0
 
 ;### DIREKTE TEXT-AUSGABE #####################################################
 
-if computer_mode=0
+    if PLATFORM_TYPE=PLATFORM_CPC
 ;(IX+0)=Bank, (IX+1/2)=Adresse, (IX+3/4)=Stack, IY,DE werden weitergegeben
 mftdat1 db 0:dw mftout
 mftdat2 db 0:dw mftclr
 mftdat3 db 0:dw mftinv
 mftdat4 db 0:dw mftfll
-elseif computer_mode=3
+elseif PLATFORM_TYPE=PLATFORM_EPR
 ;(IX+0)=Bank, (IX+1/2)=Adresse, (IX+3/4)=Stack, IY,DE werden weitergegeben
 mftdat1 db 0:dw mftout
 mftdat2 db 0:dw mftclr
@@ -9789,14 +10195,14 @@ mftdat4 db 0:dw mftfll
 mftdat5 db 0:dw mftini
 mftdat6 db 0:dw mftofs
 mftdat7 db 0:dw mftcol
-elseif computer_mode=5
+elseif PLATFORM_TYPE=PLATFORM_NCX
 ;(IX+0)=Bank, (IX+1/2)=Adresse, (IX+3/4)=Stack, IY,DE werden weitergegeben
 mftdat1 db 0:dw nctout
 mftdat2 db 0:dw mftclr
 mftdat3 db 0:dw mftinv
 mftdat4 db 0:dw mftsru
 mftdat5 db 0:dw mftsrd
-elseif computer_mode=6
+elseif PLATFORM_TYPE=PLATFORM_ZNX
 ;(IX+0)=Bank, (IX+1/2)=Adresse, (IX+3/4)=Stack, IY,DE werden weitergegeben
 mftdat1 db 0:dw nxtini
 mftdat2 db 0:dw nxtall
